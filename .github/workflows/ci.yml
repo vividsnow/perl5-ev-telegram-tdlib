@@ -1,0 +1,238 @@
+name: linux
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 4 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - perl-version: '5.40'
+            multi-thread: false
+          - perl-version: '5.38'
+            multi-thread: false
+          - perl-version: '5.40'
+            multi-thread: true
+    env:
+      ALIEN_TDLIB_PREBUILT: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vividsnow/perl5-alien-tdlib
+          path: alien-tdlib
+
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl-version }}
+          multi-thread: ${{ matrix.multi-thread }}
+
+      - name: perl dependencies
+        run: cpanm --quiet --notest Alien::Build Alien::Build::MM Test::Alien URI EV Cpanel::JSON::XS
+
+      - name: install Alien::TDLib
+        run: cd alien-tdlib && perl Makefile.PL && make && make test && make install
+
+      # the nested checkout makes EU::MM recurse into it as a subdir
+      - name: remove nested checkout
+        run: rm -rf alien-tdlib
+
+      - name: configure
+        run: perl Makefile.PL
+
+      - name: build
+        run: make
+
+      - name: test
+        run: make test
+
+      - name: disttest
+        run: make disttest
+
+  author-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ALIEN_TDLIB_PREBUILT: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vividsnow/perl5-alien-tdlib
+          path: alien-tdlib
+
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+
+      - name: perl dependencies
+        run: cpanm --quiet --notest Alien::Build Alien::Build::MM Test::Alien URI EV Cpanel::JSON::XS Test::Pod Test::Kwalitee::Extra
+
+      - name: install Alien::TDLib
+        run: cd alien-tdlib && perl Makefile.PL && make && make install
+
+      # the nested checkout pollutes the tree kwalitee scans
+      - name: remove nested checkout
+        run: rm -rf alien-tdlib
+
+      - name: build
+        run: perl Makefile.PL && make
+
+      - name: author tests
+        run: AUTHOR_TESTING=1 prove -l xt/pod.t xt/docs.t xt/readme.t xt/schema_pin.t xt/teardown_audit.t xt/eg_compile.t xt/eg_run.t xt/kwalitee.t
+
+  # Never executed anywhere yet: the first run is expected to be informative
+  # rather than green. TDLib itself is not instrumented, and TSAN into a
+  # non-instrumented perl is unverified.
+  asan:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ALIEN_TDLIB_PREBUILT: 1
+      EV_TDLIB_SHUTDOWN_TIMEOUT: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vividsnow/perl5-alien-tdlib
+          path: alien-tdlib
+
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+
+      - name: perl dependencies
+        run: cpanm --quiet --notest Alien::Build Alien::Build::MM Test::Alien URI EV Cpanel::JSON::XS
+
+      - name: install Alien::TDLib
+        run: cd alien-tdlib && perl Makefile.PL && make && make install
+
+      # the nested checkout makes EU::MM recurse into it as a subdir
+      - name: remove nested checkout
+        run: rm -rf alien-tdlib
+
+      - name: asan build and test
+        run: |
+          perl Makefile.PL \
+            CCFLAGS="$(perl -MConfig -e 'print $Config{ccflags}') -std=gnu11 -g -fsanitize=address" \
+            LIBS="$(perl -MAlien::TDLib -e 'print Alien::TDLib->libs') -lpthread"
+          make
+          AUTHOR_TESTING=1 perl xt/asan.t
+
+  valgrind:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ALIEN_TDLIB_PREBUILT: 1
+      EV_TDLIB_SHUTDOWN_TIMEOUT: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vividsnow/perl5-alien-tdlib
+          path: alien-tdlib
+
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+
+      - name: valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: perl dependencies
+        run: cpanm --quiet --notest Alien::Build Alien::Build::MM Test::Alien URI EV Cpanel::JSON::XS
+
+      - name: install Alien::TDLib
+        run: cd alien-tdlib && perl Makefile.PL && make && make install
+
+      # the nested checkout makes EU::MM recurse into it as a subdir
+      - name: remove nested checkout
+        run: rm -rf alien-tdlib
+
+      - name: valgrind build and test
+        run: |
+          perl Makefile.PL
+          make
+          AUTHOR_TESTING=1 prove -b xt/valgrind.t
+
+  # TSan cannot be preloaded into an ordinary perl, so this job builds one with
+  # -fsanitize=thread. The build is cached; a cold run takes roughly ten minutes.
+  tsan:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ALIEN_TDLIB_PREBUILT: 1
+      PERL_VERSION: '5.40.2'
+      TSAN_PERL: /opt/tsan-perl
+      EV_TDLIB_SHUTDOWN_TIMEOUT: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vividsnow/perl5-alien-tdlib
+          path: alien-tdlib
+
+      - name: cached instrumented perl
+        id: tsanperl
+        uses: actions/cache@v4
+        with:
+          path: /opt/tsan-perl
+          key: tsan-perl-${{ env.PERL_VERSION }}-${{ runner.os }}-v1
+
+      - name: build perl with -fsanitize=thread
+        if: steps.tsanperl.outputs.cache-hit != 'true'
+        run: |
+          sudo mkdir -p "$TSAN_PERL" && sudo chown "$USER" "$TSAN_PERL"
+          curl -sSL "https://www.cpan.org/src/5.0/perl-$PERL_VERSION.tar.gz" | tar xz
+          cd "perl-$PERL_VERSION"
+          ./Configure -des -Dprefix="$TSAN_PERL" \
+            -Doptimize='-g -O1 -fsanitize=thread' \
+            -Aldflags='-fsanitize=thread'
+          make -j"$(nproc)"
+          make install
+
+      - name: perl dependencies
+        run: |
+          curl -sSL https://cpanmin.us | "$TSAN_PERL/bin/perl" - App::cpanminus
+          "$TSAN_PERL/bin/cpanm" --quiet --notest \
+            Alien::Build Alien::Build::MM Test::Alien URI EV Cpanel::JSON::XS \
+            IO::Socket::SSL Net::SSLeay Mozilla::CA
+
+      - name: install Alien::TDLib
+        run: |
+          cd alien-tdlib
+          "$TSAN_PERL/bin/perl" Makefile.PL
+          make
+          make install
+
+      # the nested checkout makes EU::MM recurse into it as a subdir
+      - name: remove nested checkout
+        run: rm -rf alien-tdlib
+
+      - name: tsan build and test
+        run: |
+          "$TSAN_PERL/bin/perl" Makefile.PL \
+            CCFLAGS="$("$TSAN_PERL/bin/perl" -MConfig -e 'print $Config{ccflags}') -std=gnu11 -g -fsanitize=thread" \
+            LIBS="$("$TSAN_PERL/bin/perl" -MAlien::TDLib -e 'print Alien::TDLib->libs') -lpthread"
+          make
+          AUTHOR_TESTING=1 "$TSAN_PERL/bin/perl" xt/tsan.t
