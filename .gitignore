@@ -10,3 +10,4 @@ TDLib.c
 *.tar.gz
 t/tmp-*
 MANIFEST.bak
+docs/
