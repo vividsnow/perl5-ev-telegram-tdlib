@@ -93,7 +93,10 @@ jobs:
         run: perl Makefile.PL && make
 
       - name: author tests
-        run: AUTHOR_TESTING=1 prove -l xt/pod.t xt/docs.t xt/readme.t xt/schema_pin.t xt/teardown_audit.t xt/eg_compile.t xt/eg_run.t xt/kwalitee.t
+        # the whole directory, not a hand-listed subset that drifts: the live
+        # and sanitizer guards skip themselves without their environment.
+        # -b, not -l: several of these load the XS module, which needs blib.
+        run: AUTHOR_TESTING=1 prove -b xt/
 
   # Never executed anywhere yet: the first run is expected to be informative
   # rather than green. TDLib itself is not instrumented, and TSAN into a

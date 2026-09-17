@@ -1,5 +1,171 @@
 Revision history for EV-Telegram-TDLib
 
+0.04    2026-09-09
+        SECURITY: an unusable TDLIB_LOG_VERBOSITY (empty or non-numeric)
+        left TDLib logging at its own default level instead of the
+        quiet one this module sets. TDLib's log can carry the requests
+        that hold your api_hash and bot token, so treat stderr from any
+        run that set the variable as sensitive. It now falls back to 1.
+        INCOMPATIBLE: database_encryption_key is now encoded correctly.
+        0.03 sent it raw, so most passphrases made TDLib refuse the
+        request and kill login, while one shaped like base64 was
+        decoded and keyed the database with different bytes. If 0.03
+        opened your database with such a key, pass the decoded bytes
+        instead: MIME::Base64::decode_base64($old_key)
+        Stories, stickers and custom emoji, Telegram Stars and gifts,
+        and Telegram Business
+        Custom emoji, bulk and paid reactions
+        on_command and on_callback_data routers, and ask() for
+        one-shot questions
+        Opt-in retry on 429, off by default
+        macOS is now CI tested; the BSDs are unsupported
+        star_transactions accepts a chat as its owner, not only a user
+        set_default_reaction and message_reactions accept a custom
+        emoji, matching react()
+        A missing required argument now croaks instead of sending a
+        request with a zero id
+        INCOMPATIBLE: send_album croaks on wait => 'sent', which it
+        could never honour; drop the option
+        INCOMPATIBLE: new() croaks on an option it does not know,
+        including a misspelled on_* handler. A typo in
+        database_encryption_key used to ship the session unencrypted
+        INCOMPATIBLE: keepalive() with no argument is a getter. It used
+        to turn keepalive back on, so reading the setting re-took the
+        loop reference that keepalive(0) had released
+        The methods whose last argument is an on/off flag croak on an
+        option written in that slot, which used to invert them
+        INCOMPATIBLE: a chat, message, user, file, story or topic id
+        must now look like a number. A value that only happened to
+        numify -- text, or an option name that landed in the slot --
+        croaks instead of being sent as a zero. Surrounding space and a
+        leading sign are still accepted, so an id read from a file or
+        the environment without a chomp still works. api_id is checked
+        the same way
+        INCOMPATIBLE: an odd option list croaks, so a wrapper that
+        forwards an absent callback as undef must omit it instead
+        INCOMPATIBLE: set_database_encryption_key encodes its key like
+        the constructor option, and needs the same migration
+        INCOMPATIBLE: a single-slot on_* handler is removed by a false
+        argument. 0.03 ignored one, so a handler could not be removed
+        at all; forwarding a handler you may not have now takes away
+        the one you had, including one given to new()
+        muting a scope no longer disables its notification and story
+        sounds
+        load_chats takes list, so the archive and folders can be paged
+        send and call accept the callback last, as everything else does
+        editInlineMessageCaption honours caption_above
+        The cached chat positions keep one entry per folder, where
+        folders used to overwrite each other, and drop a list the chat
+        has left when TDLib sends the full set; chat_lists is kept
+        current as the chat joins and leaves lists
+        Text methods accept a formattedText, such as translate returns,
+        instead of sending it as HASH(0x...); plain-text fields such as
+        a bio or a chat description croak on one
+        An upload that fails or is cancelled after reporting progress
+        releases its on_upload watcher
+        INCOMPATIBLE: a setter croaks when its new value is left out,
+        rather than clearing what is there: set_password (which switched
+        two-step verification off), set_bio, set_username,
+        set_chat_description, set_supergroup_username, set_bot_name,
+        set_bot_description, set_bot_short_description and the
+        set_business_account_* pair. Pass the empty string to clear
+        INCOMPATIBLE: on_callback_query and on_callback_data also
+        receive presses on messages sent through inline mode, which
+        carry inline_message_id and no chat_id, and presses on messages
+        sent for a connected business account, which carry
+        connection_id. A handler that always reads chat_id now needs to
+        check for it
+        A login step TDLib refused keeps TDLib's error code, so
+        retry_after() reads a login flood wait
+        INCOMPATIBLE: on_upload croaks without a callback, as on_command
+        does; pass undef to remove a watcher
+        delete_messages_by_sender accepts a chat as the sender
+        mute and unmute keep a cached chat's own sound and preview
+        choices
+        join_requests takes offset_request and invite_link_members
+        offset_member, so both can be paged past their first page
+        send_inline_result honours topic, reply_to, silent and schedule
+        INCOMPATIBLE: send_inline_result, forward_messages and
+        send_quick_reply croak on wait => 'sent', which none of them
+        could honour; drop the option
+        Argument errors name the caller's line
+        INCOMPATIBLE: set_profile_photo sets the account's main photo.
+        It set the public fallback one, which privacy settings show only
+        when the main photo is hidden; pass public => 1 for that
+        INCOMPATIBLE: a poll lets a voter change or take back a vote
+        unless revoting => 0. Every poll refused both; a quiz still does
+        INCOMPATIBLE: search_all searches every chat, archived ones
+        included, where it searched the main list only. list => 'main'
+        or 'archive' narrows it, and a folder id croaks: TDLib cannot
+        search a folder
+        A plain-text name, title, bio, username or description croaks on
+        a formattedText and takes an object that stringifies, such as a
+        URI
+        load_active_stories reports the end of a story list as success,
+        as load_chats does
+        post_story calls back at once when TDLib answers with the final
+        story, which is how a bot's repost is answered
+        set_menu_button puts back the commands list with commands => 1,
+        and Telegram's default button when called with neither it nor a
+        text
+        A folder spec croaks on an unknown key, which TDLib would have
+        taken as the flag turned off, and its name may be a formattedText
+        chat() and user() accept an id spelled as the rest of the API
+        accepts one, with surrounding space or a leading sign
+        on_inline_query passes user_location through
+        mark_read is one request and no longer opens the chat, which put
+        it at the top of the account's recently opened chats and kept it
+        loaded in TDLib for the life of the process
+        Every caller-supplied text field croaks on a reference instead
+        of sending HASH(0x...): names, titles, queries, usernames, invite
+        links, sticker set names and keywords, ids, offsets, passwords and
+        callback data
+        A file argument croaks on a hashref that is not an InputFile,
+        which used to be sent as the file itself
+        call takes the callback, or its options, in place of the
+        argument hashref, for a function that needs no arguments
+        The offline test hook _inject_raw is now inject_raw
+        INCOMPATIBLE: every number an argument carries -- a limit, an
+        offset, a duration, a coordinate, each id in a list -- must look
+        like a number. A reference was sent as its memory address, so
+        reply_to => $message sent a plain message instead of a reply
+        INCOMPATIBLE: a point in time -- schedule, reschedule's $when, a
+        ban's until, an emoji status's or invite link's expires, a
+        message or search date, an away-message schedule -- croaks on a
+        small number. TDLib read one as a date in 1970 and, without an
+        error, sent the message at once, made the ban permanent or
+        cleared the status
+        INCOMPATIBLE: a method that takes no options croaks on an
+        argument past its positional ones, including a forwarded undef
+        callback; set_chat_title($chat, title => 'New') renamed the
+        chat "title"
+        A callback written before a method's options croaks instead of
+        being dropped
+        A flag croaks on a reference that is not an object, including
+        \0, which perl reads as true
+        login, close and me take the callback last; login(undef, $cb)
+        never called back
+        A reference as bot_token, phone_number or a register name croaks
+        in new() instead of leaving login waiting forever
+        INCOMPATIBLE: set_slow_mode, set_auto_delete and
+        set_discussion_group croak when the value is left out, which
+        cleared the setting; pass 0 to clear
+        set_birthdate croaks on a date that does not exist, a month
+        counted from 0, a year outside 1800 to 3000, or a partial date,
+        each of which TDLib took as clearing the birthdate
+        set_greeting_message croaks on inactivity_days other than 7, 14,
+        21 or 28, which turned the greeting off
+        set_business_location croaks on a latitude without a longitude,
+        or the reverse
+        download takes on_progress without a main callback
+        cancel_download croaks on a callback, which it never called
+        post_story, edit_story, the reaction methods, message_count's
+        filter, remote_file's file_type and business_features's source
+        take an object that stringifies
+        A list given where an arrayref belongs croaks at the call site
+        instead of dying inside the module
+        A retry or timeout setting croaks unless it is a number
+
 0.03    2026-08-27
         Mini Apps, forum topics, chat and group management, folders,
         contacts, payments, secret chats, bot provisioning, and

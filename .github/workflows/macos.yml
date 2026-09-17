@@ -1,0 +1,52 @@
+name: macos
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 5 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      ALIEN_TDLIB_PREBUILT: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vividsnow/perl5-alien-tdlib
+          path: alien-tdlib
+
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.40'
+
+      - name: perl dependencies
+        run: cpanm --quiet --notest Alien::Build Alien::Build::MM Test::Alien URI EV Cpanel::JSON::XS
+
+      - name: install Alien::TDLib
+        run: cd alien-tdlib && perl Makefile.PL && make && make install
+
+      # the nested checkout makes EU::MM recurse into it as a subdir
+      - name: remove nested checkout
+        run: rm -rf alien-tdlib
+
+      - name: configure
+        run: perl Makefile.PL
+
+      - name: build
+        run: make
+
+      - name: test
+        run: make test
+
+      - name: disttest
+        run: make disttest

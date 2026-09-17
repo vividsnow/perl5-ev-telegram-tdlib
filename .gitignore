@@ -10,4 +10,10 @@ TDLib.c
 *.tar.gz
 t/tmp-*
 MANIFEST.bak
+# the default database_directory of the examples: a real logged-in session,
+# created in whatever directory they are run from
+tdlib-db/
+tdlib-bot-db/
 docs/
+.claude/
+.pcg/
